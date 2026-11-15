@@ -23,22 +23,28 @@ const PUBLIC_FILES = {
 
 const BOOLEAN_FIELDS = ['notificationsEnabled', 'notificationSound', 'useTls'];
 
-function send(res, status, body, contentType) {
+/**
+ * Page routes, keyed by path. `/` renders the message log itself so the preview
+ * entry point works without following a redirect, and `/messages` stays a
+ * directly addressable URL. Trailing slashes are normalized before lookup.
+ */
+const PAGE_ROUTES = {
+    '/': { title: 'Messages', active: 'messages', render: () => renderMessages(messages) },
+    '/messages': { title: 'Messages', active: 'messages', render: () => renderMessages(messages) },
+    '/settings': { title: 'Configuration', active: 'settings', render: () => renderSettings(settingsStore.read()) }
+};
+
+function send(res, status, body, contentType, omitBody = false) {
     res.writeHead(status, { 'content-type': contentType, 'content-length': Buffer.byteLength(body) });
-    res.end(body);
+    res.end(omitBody ? '' : body);
 }
 
-function sendHtml(res, status, html) {
-    send(res, status, html, 'text/html; charset=utf-8');
+function sendHtml(res, status, html, omitBody = false) {
+    send(res, status, html, 'text/html; charset=utf-8', omitBody);
 }
 
 function sendJson(res, status, data) {
     send(res, status, JSON.stringify(data), 'application/json; charset=utf-8');
-}
-
-function redirect(res, location) {
-    res.writeHead(302, { location });
-    res.end();
 }
 
 function readJson(req) {
@@ -107,27 +113,16 @@ async function handle(req, res) {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const route = url.pathname.replace(/\/+$/, '') || '/';
     const method = req.method || 'GET';
+    const isRead = method === 'GET' || method === 'HEAD';
 
-    if (method === 'GET' && route === '/') {
-        return redirect(res, '/messages');
-    }
-
-    if (method === 'GET' && route === '/messages') {
+    const page = PAGE_ROUTES[route];
+    if (isRead && page) {
         const html = renderPage({
-            title: 'Messages',
-            active: 'messages',
-            body: renderMessages(messages)
+            title: page.title,
+            active: page.active,
+            body: page.render()
         });
-        return sendHtml(res, 200, html);
-    }
-
-    if (method === 'GET' && route === '/settings') {
-        const html = renderPage({
-            title: 'Configuration',
-            active: 'settings',
-            body: renderSettings(settingsStore.read())
-        });
-        return sendHtml(res, 200, html);
+        return sendHtml(res, 200, html, method === 'HEAD');
     }
 
     if (method === 'GET' && route === '/api/messages') {
@@ -154,10 +149,10 @@ async function handle(req, res) {
     }
 
     const asset = PUBLIC_FILES[route];
-    if (method === 'GET' && asset) {
+    if (isRead && asset) {
         return fs.readFile(asset.file, (error, data) => {
-            if (error) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
-            send(res, 200, data, asset.type);
+            if (error) return send(res, 404, 'Not found', 'text/plain; charset=utf-8', method === 'HEAD');
+            send(res, 200, data, asset.type, method === 'HEAD');
         });
     }
 
@@ -168,7 +163,7 @@ async function handle(req, res) {
             '<p class="page__lead">That address is not part of the Messaging Sample web UI. ' +
             'Try <a href="/messages">Messages</a> or <a href="/settings">Configuration</a>.</p></section>'
     });
-    return sendHtml(res, 404, html);
+    return sendHtml(res, 404, html, method === 'HEAD');
 }
 
 const server = http.createServer((req, res) => {

@@ -14,7 +14,10 @@ Pages
 - `/settings` — preferences (display name, notifications, sound) and the
   service connection details (host, port, TLS). Saved to
   `$DATA_DIR/settings.json`, served over `GET`/`PUT /api/settings`.
-- `/` redirects to `/messages`.
+- `/` serves the same Messages page (no redirect), so the root URL of the
+  browser preview always renders a real page. Trailing slashes (`/messages/`)
+  resolve to the same route, and `HEAD` requests are answered like `GET`
+  without a body.
 
 Running locally
 ---------------
